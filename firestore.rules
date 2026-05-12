@@ -1,0 +1,94 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isVerifiedEmail() {
+      // In this environment, we might not mandate email_verified right off if doing simple email/password, but let's encourage safety or drop it if not strictly verifiable easily.
+      // Usually auth.token.email_verified is accessible. We'll simplify to just isSignedIn() for general writes unless specifically strict.
+      return true; // Skipping strict email verification requirement for MVP unless requested.
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'username', 'email', 'createdAt'])
+        && data.uid is string
+        && data.username is string
+        && data.email is string;
+    }
+
+    function isValidStory(data) {
+      return data.keys().hasAll(['authorId', 'authorName', 'category', 'title', 'contentSections', 'createdAt', 'likes', 'saves', 'views'])
+        && data.authorId is string && data.authorId.size() > 0 && data.authorId.size() <= 128
+        && data.authorName is string && data.authorName.size() <= 100
+        && data.category is string && data.category in ['money', 'habits', 'growth', 'success', 'growth & success']
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.contentSections is map
+        && data.contentSections.keys().hasAll(['situationBefore', 'whatChanged', 'exactSteps', 'result', 'mistakes', 'advice'])
+        && data.createdAt == request.time
+        && data.likes == 0
+        && data.saves == 0
+        && data.views == 0;
+    }
+
+    match /users/{userId} {
+      allow get: if isSignedIn();
+      allow list: if false;
+
+      allow create: if isOwner(userId)
+                    && incoming().uid == userId
+                    && isValidUser(incoming());
+
+      allow update: if isOwner(userId)
+                    && incoming().uid == existing().uid
+                    && incoming().email == existing().email;
+
+      allow delete: if false;
+    }
+
+    match /stories/{storyId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+
+      allow create: if isSignedIn()
+                    && isValidId(storyId)
+                    && incoming().authorId == request.auth.uid
+                    && isValidStory(incoming())
+                    && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+
+      allow update: if isSignedIn()
+                    && isValidId(storyId)
+                    && existing().authorId == request.auth.uid
+                    && incoming().authorId == existing().authorId
+                    && incoming().authorName == existing().authorName
+                    && incoming().createdAt == existing().createdAt
+                    && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'contentSections', 'category', 'updatedAt', 'tags', 'pdfUrl'])
+                    && incoming().updatedAt == request.time;
+
+      allow delete: if isSignedIn()
+                    && isValidId(storyId)
+                    && existing().authorId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile document",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Auth UID" },
+        "username": { "type": "string", "description": "Display name" },
+        "email": { "type": "string", "description": "Email address" },
+        "profilePhoto": { "type": ["string", "null"], "description": "URL to photo" },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["uid", "username", "email", "createdAt"]
+    },
+    "Story": {
+      "title": "Story",
+      "description": "An experience sharing story",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string", "description": "User who authored the story" },
+        "authorName": { "type": "string", "description": "Name of the author" },
+        "category": { "type": "string", "enum": ["money", "habits", "growth", "success"] },
+        "title": { "type": "string" },
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "contentSections": {
+          "type": "object",
+          "properties": {
+            "situationBefore": { "type": "string" },
+            "whatChanged": { "type": "string" },
+            "exactSteps": { "type": "string" },
+            "result": { "type": "string" },
+            "mistakes": { "type": "string" },
+            "advice": { "type": "string" }
+          },
+          "required": ["situationBefore", "whatChanged", "exactSteps", "result", "mistakes", "advice"]
+        },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" },
+        "pdfUrl": { "type": ["string", "null"] },
+        "likes": { "type": "number", "default": 0 },
+        "saves": { "type": "number", "default": 0 },
+        "views": { "type": "number", "default": 0 }
+      },
+      "required": ["authorId", "authorName", "category", "title", "contentSections", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users collection"
+    },
+    "/stories/{storyId}": {
+      "schema": { "$ref": "#/entities/Story" },
+      "description": "Stories collection"
+    }
+  }
+}
