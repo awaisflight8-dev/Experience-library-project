@@ -1,16 +1,32 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
-import { collection, query, orderBy, onSnapshot, where, Timestamp } from 'firebase/firestore';
-import { BookOpen, LogOut, Search, PlusCircle, User as UserIcon } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useNavigate, Link, useParams } from 'react-router-dom';
+import { motion } from 'motion/react';
+import { 
+  LogOut, 
+  BookOpen, 
+  ChevronRight,
+  MoreHorizontal,
+  ThumbsUp,
+  MessageSquare,
+  Share2,
+  Image as ImageIcon,
+  Smile
+} from 'lucide-react';
+import { collection, query, orderBy, limit, onSnapshot, where, Timestamp, getDoc, doc } from 'firebase/firestore';
+import SearchBar from '../components/SearchBar';
+import ExpandableStoryCard from '../components/ExpandableStoryCard';
+import { HOME_CATEGORIES } from '../constants/categories';
 
 interface Story {
   id: string;
   title: string;
   category: string;
   authorName: string;
+  authorUsername?: string;
+  authorId: string;
   createdAt: Timestamp;
   contentSections?: {
     situationBefore: string;
@@ -20,192 +36,232 @@ interface Story {
     mistakes: string;
     advice: string;
   };
+  likes?: number;
+  commentsCount?: number;
 }
-
-const CATEGORIES = ['All', 'Money', 'Habits', 'Growth & Success'];
 
 export default function Home() {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
-  const [activeCategory, setActiveCategory] = useState('All');
+  const { storyId } = useParams<{ storyId: string }>();
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeCategory, setActiveCategory] = useState('All');
 
   useEffect(() => {
-    if (!user) return;
+    setLoading(true);
+    let q = query(
+      collection(db, 'stories'),
+      orderBy('createdAt', 'desc'),
+      limit(20)
+    );
 
-    let q = query(collection(db, 'stories'), orderBy('createdAt', 'desc'));
-    
     if (activeCategory !== 'All') {
-      q = query(collection(db, 'stories'), where('category', '==', activeCategory.toLowerCase()), orderBy('createdAt', 'desc'));
+      q = query(
+        collection(db, 'stories'),
+        where('category', '==', activeCategory),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
     }
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const storiesData = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
+    const unsubscribe = onSnapshot(q, async (snapshot) => {
+      let storyData = snapshot.docs.map(d => ({
+        id: d.id,
+        ...d.data()
       })) as Story[];
-      setStories(storiesData);
+
+      if (storyId && !storyData.find(s => s.id === storyId)) {
+        try {
+          const specificStory = await getDoc(doc(db, 'stories', storyId));
+          if (specificStory.exists()) {
+            storyData = [{ id: specificStory.id, ...specificStory.data() } as Story, ...storyData];
+          }
+        } catch (err) {
+          console.error("Error fetching requested story:", err);
+        }
+      }
+
+      setStories(storyData);
       setLoading(false);
     }, (error) => {
       console.error("Error fetching stories:", error);
       setLoading(false);
     });
 
-    return unsubscribe;
-  }, [user, activeCategory]);
+    return () => unsubscribe();
+  }, [activeCategory]);
 
   const handleLogout = async () => {
     await signOut(auth);
     navigate('/');
   };
 
+  const getTimeAgo = (timestamp?: Timestamp) => {
+    if (!timestamp) return 'Just now';
+    const seconds = Math.floor((new Date().getTime() - timestamp.toDate().getTime()) / 1000);
+    
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + 'y';
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + 'm';
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + 'd';
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + 'h';
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + 'm';
+    return Math.floor(seconds) + 's';
+  };
+
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans selection:bg-neutral-200">
-      {/* Navbar */}
-      <nav className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-neutral-100 px-6 py-4">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <Link to="/home" className="flex items-center gap-2 font-medium text-lg tracking-tight">
-            <BookOpen className="w-5 h-5" />
-            Experience Library
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.3 }}
+      className="min-h-screen bg-[#F0F2F5] font-sans text-[#050505] pb-20"
+    >
+      {/* Facebook-style Header */}
+      <nav className="fixed top-0 w-full z-50 bg-white shadow-sm h-14 flex items-center px-4 transition-all">
+        <div className="max-w-[1200px] w-full mx-auto flex items-center justify-between gap-4">
+          <Link to="/home" className="flex items-center gap-2 flex-shrink-0 group">
+            <div className="w-9 h-9 bg-[#0866FF] rounded-full flex items-center justify-center">
+              <BookOpen className="w-5 h-5 text-white" />
+            </div>
+            <span className="hidden sm:block font-bold text-xl tracking-tight text-[#0866FF]">Experience</span>
           </Link>
           
-          <div className="flex items-center gap-6">
-            <button className="flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors">
-              <Search className="w-4 h-4" />
-              <span className="hidden sm:inline">Search</span>
-            </button>
-            <div className="w-px h-4 bg-neutral-200 hidden sm:block"></div>
-            <button 
-              onClick={handleLogout}
-              className="flex items-center gap-2 text-sm font-medium text-neutral-600 hover:text-neutral-900 transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden sm:inline">Sign out</span>
-            </button>
-            <div className="w-8 h-8 rounded-full bg-neutral-200 flex items-center justify-center overflow-hidden">
-              {userProfile?.profilePhoto ? (
-                <img src={userProfile.profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-              ) : (
-                <UserIcon className="w-4 h-4 text-neutral-500" />
-              )}
-            </div>
+          <div className="flex-1 max-w-[600px]">
+             <SearchBar />
           </div>
+
+          <Link to={userProfile?.username ? `/profile/${userProfile.username}` : '#'} className="flex-shrink-0 flex items-center justify-center w-9 h-9 rounded-full bg-[#E4E6EB] hover:bg-[#D8DADF] cursor-pointer transition-colors text-black font-semibold overflow-hidden border border-gray-100 shadow-sm">
+             {userProfile?.profileImage || userProfile?.profilePhoto ? (
+                <img src={userProfile.profileImage || userProfile.profilePhoto!} alt={userProfile.username} className="w-full h-full object-cover" />
+             ) : (
+                userProfile?.username?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'
+             )}
+          </Link>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="flex flex-col lg:flex-row gap-8">
-          
-          {/* Main Feed */}
-          <div className="flex-1 max-w-3xl">
-            {/* New Story Trigger */}
-            <Link to="/create" className="mb-8 p-4 bg-white rounded-2xl border border-neutral-100 flex items-center gap-4 cursor-pointer hover:border-neutral-200 transition-colors shadow-sm">
-              <div className="w-10 h-10 rounded-full bg-neutral-100 flex items-center justify-center flex-shrink-0">
-                <PlusCircle className="w-5 h-5 text-neutral-600" />
-              </div>
-              <div className="flex-1 text-neutral-500">
-                Share an experience...
-              </div>
-              <button className="bg-neutral-900 text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-neutral-800 transition-colors">
-                Write
-              </button>
-            </Link>
+      {/* Mobile Search - Removed as we now have search in header or can keep if needed, but user wants clean */}
+      {/* <div className="md:hidden px-4 pt-16 pb-2 bg-white shadow-sm mb-4">
+        <SearchBar />
+      </div> */}
 
-            {/* Filters */}
-            <div className="flex items-center gap-2 overflow-x-auto pb-4 mb-4 scrollbar-hide">
-              {CATEGORIES.map(category => (
-                <button
-                  key={category}
-                  onClick={() => setActiveCategory(category)}
-                  className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                    activeCategory === category 
-                      ? 'bg-neutral-900 text-white' 
-                      : 'bg-white border border-neutral-200 text-neutral-600 hover:bg-neutral-50'
-                  }`}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-
-            {/* Feed */}
-            <div className="space-y-6">
-              {loading ? (
-                <div className="text-center py-12 text-neutral-500">Loading stories...</div>
-              ) : stories.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-2xl border border-neutral-100 border-dashed">
-                  <BookOpen className="w-8 h-8 text-neutral-300 mx-auto mb-3" />
-                  <p className="text-neutral-500">No experiences found in this category.</p>
+      <main className="max-w-[1920px] mx-auto pt-[72px] px-0 lg:px-4 flex justify-center">
+        
+        {/* Left Sidebar (Categories) - Hidden on mobile/tablet */}
+        <div className="hidden xl:block w-[320px] shrink-0 sticky top-[72px] h-[calc(100vh-72px)] overflow-y-auto px-4">
+          <div className="space-y-1 py-4">
+            {HOME_CATEGORIES.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`w-full flex items-center gap-3 px-2 py-3 rounded-lg transition-colors ${
+                  activeCategory === cat 
+                    ? 'bg-[#E4E6EB] font-semibold text-black' 
+                    : 'hover:bg-[#E4E6EB] font-medium text-gray-700'
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center ${activeCategory === cat ? 'bg-[#0866FF] text-white' : 'bg-gray-200 text-gray-700'}`}>
+                   {cat.charAt(0)}
                 </div>
-              ) : (
-                stories.map(story => (
-                  <article key={story.id} className="bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm hover:shadow-md transition-shadow">
-                    <div className="flex items-center gap-3 mb-4">
-                      <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center">
-                        <UserIcon className="w-4 h-4 text-neutral-500" />
-                      </div>
-                      <div>
-                        <div className="font-medium text-sm text-neutral-900">{story.authorName}</div>
-                        <div className="text-xs text-neutral-500">
-                          {story.createdAt?.toDate ? story.createdAt.toDate().toLocaleDateString() : 'Just now'} · <span className="capitalize">{story.category}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <h2 className="text-xl font-medium text-neutral-900 mb-2">{story.title}</h2>
-                    <p className="text-neutral-600 leading-relaxed max-w-none line-clamp-3">
-                      {story.contentSections?.situationBefore || 'No preview available.'}
-                    </p>
-                    <button className="mt-4 text-sm font-medium text-neutral-900 hover:underline">
-                      Read full story →
-                    </button>
-                  </article>
-                ))
-              )}
+                <span>{cat}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Main Feed Content */}
+        <div className="w-full max-w-[680px] px-0 sm:px-4 py-4 flex flex-col items-center">
+          
+          {/* Create Post Card */}
+          <div className="w-full bg-white sm:rounded-xl shadow-sm border-x-0 sm:border border-gray-200 p-4 mb-4">
+            <div className="flex gap-3 items-center">
+              <Link to={userProfile?.username ? `/profile/${userProfile.username}` : '#'} className="w-10 h-10 rounded-full bg-[#E4E6EB] flex flex-shrink-0 items-center justify-center text-black font-semibold overflow-hidden">
+                 {userProfile?.profileImage || userProfile?.profilePhoto ? (
+                    <img src={userProfile.profileImage || userProfile.profilePhoto!} alt={userProfile.username} className="w-full h-full object-cover" />
+                 ) : (
+                    userProfile?.username?.charAt(0).toUpperCase() || user?.email?.charAt(0).toUpperCase() || 'U'
+                 )}
+              </Link>
+              <Link to="/create" className="flex-1 bg-[#F0F2F5] hover:bg-[#E4E6EB] transition-colors rounded-full px-6 py-2.5 text-left text-[15px] font-medium text-gray-600 cursor-pointer">
+                What's on your mind, {userProfile?.username || 'User'}?
+              </Link>
             </div>
           </div>
 
-          {/* Sidebar */}
-          <aside className="hidden lg:block w-80 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-neutral-100 shadow-sm">
-              <h3 className="font-medium text-neutral-900 mb-4">Trending Topics</h3>
-              <div className="space-y-3">
-                <div className="text-sm cursor-pointer group">
-                  <span className="font-medium text-neutral-900 group-hover:underline">#career-pivot</span>
-                  <div className="text-neutral-500 text-xs mt-0.5">120 stories</div>
+          {/* Stories List */}
+          <div className="w-full flex flex-col gap-4">
+            {loading ? (
+              Array(3).fill(0).map((_, i) => (
+                <div key={i} className="bg-white sm:rounded-xl shadow-sm border border-gray-200 p-4 animate-pulse space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gray-200 rounded-full" />
+                    <div className="space-y-2">
+                       <div className="w-32 h-3 bg-gray-200 rounded-full" />
+                       <div className="w-20 h-2 bg-gray-200 rounded-full" />
+                    </div>
+                  </div>
+                  <div className="w-3/4 h-4 bg-gray-200 rounded-lg" />
+                  <div className="w-full h-32 bg-gray-100 rounded-lg" />
                 </div>
-                <div className="text-sm cursor-pointer group">
-                  <span className="font-medium text-neutral-900 group-hover:underline">#first-100k</span>
-                  <div className="text-neutral-500 text-xs mt-0.5">85 stories</div>
-                </div>
-                <div className="text-sm cursor-pointer group">
-                  <span className="font-medium text-neutral-900 group-hover:underline">#morning-routine</span>
-                  <div className="text-neutral-500 text-xs mt-0.5">64 stories</div>
-                </div>
+              ))
+            ) : stories.length === 0 ? (
+              <div className="py-24 text-center bg-white sm:rounded-xl border border-gray-200 shadow-sm px-6">
+                <h3 className="text-xl font-bold text-black mb-2">No posts available</h3>
+                <p className="text-gray-500 font-medium">Adjust your filters or be the first to share an experience.</p>
               </div>
-            </div>
+            ) : (
+              stories.map(story => (
+                <ExpandableStoryCard key={story.id} story={story} initiallyExpanded={story.id === storyId} />
+              ))
+            )}
+          </div>
+        </div>
 
-            <div className="bg-emerald-50 p-6 rounded-2xl border border-emerald-100 text-emerald-900">
-              <h3 className="font-medium mb-2">Write your first story</h3>
-              <p className="text-sm text-emerald-800/80 mb-4 leading-relaxed">
-                Your experiences could be exactly what someone else needs to hear today.
-              </p>
-              <Link to="/create" className="bg-emerald-900 text-white w-full py-2 rounded-xl text-sm font-medium hover:bg-emerald-800 transition-colors flex items-center justify-center">
-                Start Writing
-              </Link>
-            </div>
-            
-            <footer className="text-xs text-neutral-400 space-x-3 text-center">
-              <a href="#" className="hover:text-neutral-600 transition-colors">About</a>
-              <a href="#" className="hover:text-neutral-600 transition-colors">Terms</a>
-              <a href="#" className="hover:text-neutral-600 transition-colors">Privacy</a>
-              <br />
-              <span className="mt-2 block">© 2026 Experience Library</span>
-            </footer>
-          </aside>
+        {/* Right Sidebar (Contacts/Info) */}
+        <div className="hidden lg:block w-[320px] shrink-0 sticky top-[72px] h-[calc(100vh-72px)] overflow-y-auto px-4 py-4">
+           <h3 className="font-semibold text-[#65676B] text-[15px] mb-4">Suggested</h3>
+           <Link 
+              to="/create" 
+              className="flex items-center gap-3 p-2 hover:bg-[#E4E6EB] rounded-lg transition-colors cursor-pointer group"
+            >
+              <div className="w-9 h-9 rounded-full bg-[#E4E6EB] flex items-center justify-center border border-gray-200 text-gray-600">
+                <BookOpen className="w-5 h-5" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-semibold text-[15px]">Share your journey</span>
+                <span className="text-[13px] text-[#65676B]">Help others learn</span>
+              </div>
+            </Link>
 
+            <div className="mt-8 border-t border-gray-300 pt-4 px-2">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] text-[#65676B]">
+                <a href="#" className="hover:underline">Privacy</a>
+                <a href="#" className="hover:underline">Terms</a>
+                <a href="#" className="hover:underline">Advertising</a>
+                <a href="#" className="hover:underline">Ad Choices</a>
+                <a href="#" className="hover:underline">Cookies</a>
+              </div>
+              <p className="text-[13px] text-[#65676B] mt-2">Experience Library © 2026</p>
+            </div>
         </div>
       </main>
-    </div>
+
+      {/* Floating Action Button */}
+      <Link 
+        to="/create"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-[#0866FF] text-white rounded-full flex items-center justify-center shadow-lg hover:bg-[#0759E0] transition-transform hover:scale-110 active:scale-95 z-50 group"
+      >
+        <BookOpen className="w-6 h-6" />
+        <span className="absolute right-full mr-3 bg-black text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none font-medium">
+          Create Story
+        </span>
+      </Link>
+    </motion.div>
   );
 }

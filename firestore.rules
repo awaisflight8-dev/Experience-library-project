@@ -38,6 +38,30 @@ service cloud.firestore {
         && data.email is string;
     }
 
+    function isValidStoryLike(data) {
+      return data.keys().hasAll(['storyId', 'userId', 'createdAt'])
+        && data.storyId is string
+        && data.userId is string
+        && data.createdAt == request.time;
+    }
+
+    function isValidFollow(data) {
+      return data.keys().hasAll(['followerId', 'followingId', 'createdAt'])
+        && data.followerId is string
+        && data.followingId is string
+        && data.createdAt == request.time;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['storyId', 'userId', 'username', 'profileImage', 'text', 'createdAt'])
+        && data.storyId is string
+        && data.userId is string
+        && data.username is string
+        && (data.profileImage is string || data.profileImage == null)
+        && data.text is string && data.text.size() > 0 && data.text.size() <= 1000
+        && data.createdAt == request.time;
+    }
+
     function isValidStory(data) {
       return data.keys().hasAll(['authorId', 'authorName', 'category', 'title', 'contentSections', 'createdAt', 'likes', 'saves', 'views'])
         && data.authorId is string && data.authorId.size() > 0 && data.authorId.size() <= 128
@@ -54,7 +78,7 @@ service cloud.firestore {
 
     match /users/{userId} {
       allow get: if isSignedIn();
-      allow list: if false;
+      allow list: if isSignedIn();
 
       allow create: if isOwner(userId)
                     && incoming().uid == userId
@@ -65,6 +89,37 @@ service cloud.firestore {
                     && incoming().email == existing().email;
 
       allow delete: if false;
+    }
+
+    match /storyLikes/{likeId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() 
+                    && incoming().userId == request.auth.uid 
+                    && isValidStoryLike(incoming());
+      allow delete: if isSignedIn()
+                    && existing().userId == request.auth.uid;
+    }
+
+    match /follows/{followId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() 
+                    && incoming().followerId == request.auth.uid 
+                    && incoming().followingId != request.auth.uid
+                    && isValidFollow(incoming());
+      allow delete: if isSignedIn()
+                    && existing().followerId == request.auth.uid;
+    }
+
+    match /comments/{commentId} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() 
+                    && incoming().userId == request.auth.uid 
+                    && isValidComment(incoming());
+      allow delete: if isSignedIn()
+                    && existing().userId == request.auth.uid;
     }
 
     match /stories/{storyId} {
@@ -79,12 +134,21 @@ service cloud.firestore {
 
       allow update: if isSignedIn()
                     && isValidId(storyId)
-                    && existing().authorId == request.auth.uid
-                    && incoming().authorId == existing().authorId
-                    && incoming().authorName == existing().authorName
-                    && incoming().createdAt == existing().createdAt
-                    && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'contentSections', 'category', 'updatedAt', 'tags', 'pdfUrl'])
-                    && incoming().updatedAt == request.time;
+                    && (
+                      // Action: Author edit
+                      (isOwner(existing().authorId)
+                        && incoming().authorId == existing().authorId
+                        && incoming().authorName == existing().authorName
+                        && incoming().createdAt == existing().createdAt
+                        && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'contentSections', 'category', 'updatedAt', 'tags', 'pdfUrl'])
+                        && incoming().updatedAt == request.time)
+                      ||
+                      // Action: View, Like, or Comment increment/decrement (Any signed-in user)
+                      (incoming().diff(existing()).affectedKeys().hasOnly(['views', 'likes', 'commentsCount'])
+                        && (!incoming().diff(existing()).affectedKeys().hasAny(['views']) || incoming().views == existing().views + 1)
+                        && (!incoming().diff(existing()).affectedKeys().hasAny(['likes']) || incoming().likes == existing().likes + 1 || incoming().likes == existing().likes - 1)
+                        && (!incoming().diff(existing()).affectedKeys().hasAny(['commentsCount']) || incoming().commentsCount == existing().get('commentsCount', 0) + 1 || incoming().commentsCount == existing().get('commentsCount', 0) - 1))
+                    );
 
       allow delete: if isSignedIn()
                     && isValidId(storyId)

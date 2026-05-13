@@ -1,12 +1,18 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { db, auth, storage, handleFirestoreError, OperationType } from '../lib/firebase';
+import { motion } from 'motion/react';
+import { db, storage, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, doc, setDoc, serverTimestamp } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { ArrowLeft, BookOpen, Upload, X, Loader2 } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  X, 
+  Loader2, 
+  Sparkles, 
+  Hash,
+  AlertCircle
+} from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-
-const CATEGORIES = ['Money', 'Habits', 'Growth & Success'];
+import CategorySelector from '../components/CategorySelector';
 
 export default function CreateStory() {
   const { user, userProfile } = useAuth();
@@ -16,7 +22,7 @@ export default function CreateStory() {
 
   const [formData, setFormData] = useState({
     title: '',
-    category: 'Money',
+    category: '',
     tags: '',
     situationBefore: '',
     whatChanged: '',
@@ -26,34 +32,20 @@ export default function CreateStory() {
     advice: '',
   });
 
-  const [pdfFile, setPdfFile] = useState<File | null>(null);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      const file = e.target.files[0];
-      if (file.type !== 'application/pdf') {
-        setError('Only PDF files are allowed');
-        return;
-      }
-      if (file.size > 5 * 1024 * 1024) {
-        setError('File size must be less than 5MB');
-        return;
-      }
-      setPdfFile(file);
-      setError('');
-    }
+  const handleCategoryChange = (category: string) => {
+    setFormData(prev => ({ ...prev, category }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    if (!formData.title || !formData.situationBefore || !formData.whatChanged || !formData.exactSteps || !formData.result || !formData.mistakes || !formData.advice) {
-      setError('Please fill in all required fields');
+    if (!formData.title || !formData.category || !formData.situationBefore || !formData.whatChanged || !formData.exactSteps || !formData.result || !formData.mistakes || !formData.advice) {
+      setError('Please fill in all required fields including category');
       return;
     }
 
@@ -61,18 +53,12 @@ export default function CreateStory() {
     setError('');
 
     try {
-      let pdfUrl = null;
-      if (pdfFile) {
-        const fileRef = ref(storage, `stories/${user.uid}/${Date.now()}-${pdfFile.name}`);
-        const snapshot = await uploadBytes(fileRef, pdfFile);
-        pdfUrl = await getDownloadURL(snapshot.ref);
-      }
-
       const storyId = doc(collection(db, 'stories')).id;
       const storyData = {
         authorId: user.uid,
         authorName: userProfile?.username || user.displayName || 'Anonymous',
-        category: formData.category.toLowerCase(),
+        authorUsername: userProfile?.username || null,
+        category: formData.category,
         title: formData.title,
         tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag !== ''),
         contentSections: {
@@ -83,7 +69,7 @@ export default function CreateStory() {
           mistakes: formData.mistakes,
           advice: formData.advice,
         },
-        pdfUrl,
+        pdfUrl: null,
         createdAt: serverTimestamp(),
         likes: 0,
         saves: 0,
@@ -101,183 +87,143 @@ export default function CreateStory() {
     }
   };
 
+  const handleBack = () => {
+    if (window.history.length > 2) {
+      navigate(-1);
+    } else {
+      navigate('/home');
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-neutral-50 text-neutral-900 font-sans selection:bg-neutral-200">
-      <nav className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-neutral-100 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link to="/home" className="p-2 hover:bg-neutral-100 rounded-full transition-colors">
-              <ArrowLeft className="w-5 h-5 text-neutral-600" />
-            </Link>
-            <div className="flex items-center gap-2 font-medium text-lg tracking-tight">
-              <BookOpen className="w-5 h-5" />
-              Share Experience
-            </div>
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.3 }}
+      className="min-h-screen bg-[#F0F2F5] text-[#050505] font-sans pb-24"
+    >
+      {/* Top Nav */}
+      <nav className="fixed top-0 w-full z-50 bg-white shadow-sm h-14 flex items-center px-4 transition-all">
+        <div className="max-w-[1200px] w-full mx-auto flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <button onClick={handleBack} className="p-2 hover:bg-[#F0F2F5] rounded-full transition-colors mr-2">
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+            <span className="font-bold text-[17px] hidden sm:block">Create Story</span>
           </div>
+          
           <button
             onClick={handleSubmit}
             disabled={loading}
-            className="bg-neutral-900 text-white px-6 py-2 rounded-xl text-sm font-medium hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center gap-2"
+            className="bg-[#0866FF] text-white px-5 py-1.5 rounded-lg text-[15px] font-semibold hover:bg-[#0759E0] disabled:opacity-50 transition-colors flex items-center gap-2 shadow-sm"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Publish Story'}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            Publish
           </button>
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto px-6 py-12">
-        <form onSubmit={handleSubmit} className="space-y-12">
-          {error && (
-            <div className="bg-red-50 border border-red-100 text-red-900 px-4 py-3 rounded-xl text-sm flex items-center justify-between">
-              {error}
-              <button onClick={() => setError('')}><X className="w-4 h-4" /></button>
-            </div>
-          )}
+      <main className="max-w-[680px] mx-auto px-4 pt-[72px]">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center gap-3">
+             <div className="w-10 h-10 rounded-full bg-[#E4E6EB] flex items-center justify-center font-bold text-gray-500 overflow-hidden">
+                {userProfile?.profileImage || userProfile?.profilePhoto ? (
+                  <img src={userProfile.profileImage || userProfile.profilePhoto!} alt={userProfile.username} className="w-full h-full object-cover" />
+                ) : (
+                  userProfile?.username?.charAt(0).toUpperCase() || 'U'
+                )}
+             </div>
+             <div className="flex flex-col">
+                <span className="font-semibold text-[15px]">{userProfile?.username || 'User'}</span>
+                <span className="text-[13px] text-gray-500 font-medium bg-gray-100 px-2 py-0.5 rounded-full inline-block w-fit">Public</span>
+             </div>
+          </div>
 
-          {/* Basic Info */}
-          <section className="space-y-6">
-            <div>
-              <label className="block text-sm font-semibold text-neutral-900 mb-2">Title</label>
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {error && (
+              <div className="bg-red-50 text-red-500 px-4 py-3 rounded-xl flex items-center justify-between border border-red-100">
+                <div className="flex items-center gap-3 font-semibold text-sm">
+                  <AlertCircle className="w-4 h-4" />
+                  {error}
+                </div>
+                <button type="button" onClick={() => setError('')}><X className="w-4 h-4 opacity-50 hover:opacity-100 transition-opacity" /></button>
+              </div>
+            )}
+
+            <div className="space-y-4">
               <input
                 type="text"
                 name="title"
                 value={formData.title}
                 onChange={handleChange}
-                placeholder="Give your experience a clear, catchy title"
-                className="w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 focus:border-neutral-900 transition-all outline-none text-lg font-medium"
+                placeholder="Story Title"
+                className="w-full text-2xl font-bold text-gray-900 placeholder:text-gray-400 focus:outline-none bg-transparent"
               />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label className="block text-sm font-semibold text-neutral-900 mb-2">Category</label>
-                <select
-                  name="category"
-                  value={formData.category}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 transition-all outline-none appearance-none"
-                >
-                  {CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-neutral-900 mb-2">Tags</label>
-                <input
-                  type="text"
-                  name="tags"
-                  value={formData.tags}
-                  onChange={handleChange}
-                  placeholder="e.g. startup, failure, routine (comma separated)"
-                  className="w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 transition-all outline-none"
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* Content Sections */}
-          <section className="space-y-8 pt-8 border-t border-neutral-100">
-            <h2 className="text-xl font-semibold">Structured Story</h2>
-            
-            <div className="space-y-6">
-              <FormField 
-                label="The Situation Before"
-                name="situationBefore"
-                placeholder="Where were you before the change? Describe the starting point."
-                value={formData.situationBefore}
-                onChange={handleChange}
-              />
-              <FormField 
-                label="What Changed?"
-                name="whatChanged"
-                placeholder="The catalyst or the moment you decided to act differently."
-                value={formData.whatChanged}
-                onChange={handleChange}
-              />
-              <FormField 
-                label="Exact Steps Taken"
-                name="exactSteps"
-                placeholder="Step-by-step what did you actually do? Be specific."
-                value={formData.exactSteps}
-                onChange={handleChange}
-              />
-              <FormField 
-                label="The Result"
-                name="result"
-                placeholder="What happened? Give numbers, feelings, or tangible outcomes."
-                value={formData.result}
-                onChange={handleChange}
-              />
-              <FormField 
-                label="Common Mistakes"
-                name="mistakes"
-                placeholder="What should others avoid doing?"
-                value={formData.mistakes}
-                onChange={handleChange}
-              />
-              <FormField 
-                label="Advice for Others"
-                name="advice"
-                placeholder="Your main takeaway for the reader."
-                value={formData.advice}
-                onChange={handleChange}
-              />
-            </div>
-          </section>
-
-          {/* PDF Upload */}
-          <section className="pt-8 border-t border-neutral-100">
-            <label className="block text-sm font-semibold text-neutral-900 mb-2">Optional PDF (Documentation/Proofs)</label>
-            <div className="relative border-2 border-dashed border-neutral-200 rounded-2xl p-8 hover:border-neutral-300 transition-colors flex flex-col items-center justify-center text-center">
-              <input
-                type="file"
-                accept=".pdf"
-                onChange={handleFileChange}
-                className="absolute inset-0 opacity-0 cursor-pointer"
-              />
-              {pdfFile ? (
-                <div className="flex items-center gap-3 bg-neutral-100 px-4 py-2 rounded-lg">
-                  <span className="text-sm font-medium">{pdfFile.name}</span>
-                  <button type="button" onClick={(e) => { e.preventDefault(); setPdfFile(null); }} className="hover:text-red-600">
-                    <X className="w-4 h-4" />
-                  </button>
+              
+              <div className="flex flex-wrap gap-4">
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-[13px] font-semibold text-gray-500 mb-1 ml-1">Category</label>
+                  <CategorySelector 
+                    value={formData.category}
+                    onChange={handleCategoryChange}
+                  />
                 </div>
-              ) : (
-                <>
-                  <Upload className="w-8 h-8 text-neutral-400 mb-2" />
-                  <p className="text-sm text-neutral-500">Click or drag PDF here to upload (max 5MB)</p>
-                </>
-              )}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="block text-[13px] font-semibold text-gray-500 mb-1 ml-1">Tags (comma separated)</label>
+                  <div className="relative flex items-center">
+                    <Hash className="absolute left-3 w-4 h-4 text-gray-400" />
+                    <input
+                      type="text"
+                      name="tags"
+                      value={formData.tags}
+                      onChange={handleChange}
+                      placeholder="startup, growth, failure"
+                      className="w-full pl-9 pr-4 py-2 bg-[#F0F2F5] border-none rounded-lg focus:ring-2 focus:ring-[#0866FF] text-[15px]"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
-          </section>
 
-          <div className="pt-8">
+            <div className="space-y-8 pt-4 pb-6">
+               {[
+                 { id: 'situationBefore', label: 'The Situation Before', placeholder: 'What was going on?' },
+                 { id: 'whatChanged', label: 'The Turning Point', placeholder: 'What changed?' },
+                 { id: 'exactSteps', label: 'Exact Steps Taken', placeholder: 'How did you do it?' },
+                 { id: 'result', label: 'The Result', placeholder: 'What was the outcome?' },
+                 { id: 'mistakes', label: 'Mistakes & Pitfalls', placeholder: 'What should others avoid?' },
+                 { id: 'advice', label: 'Final Advice', placeholder: 'One key takeaway...' }
+               ].map((field) => (
+                 <div key={field.id} className="space-y-2">
+                    <label className="block text-[14px] font-bold text-gray-700 ml-1 uppercase tracking-tight">{field.label}</label>
+                    <textarea
+                      name={field.id}
+                      placeholder={field.placeholder}
+                      value={(formData as any)[field.id]}
+                      onChange={handleChange}
+                      className="w-full px-4 py-3 bg-[#F0F2F5] border-none rounded-xl focus:ring-2 focus:ring-[#0866FF] text-[15px] min-h-[120px] resize-none"
+                    />
+                 </div>
+               ))}
+            </div>
+
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-neutral-900 text-white py-4 rounded-2xl font-medium hover:bg-neutral-800 disabled:opacity-50 transition-all flex items-center justify-center gap-2 text-lg shadow-lg shadow-neutral-200"
+              className="w-full bg-[#0866FF] text-white py-3 rounded-lg font-bold hover:bg-[#0759E0] disabled:opacity-50 transition-colors text-[17px] flex items-center justify-center gap-2 shadow-sm"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : 'Publish Experience'}
+              {loading ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Publishing...
+                </>
+              ) : 'Publish Post'}
             </button>
-          </div>
-        </form>
+          </form>
+        </div>
       </main>
-    </div>
-  );
-}
-
-function FormField({ label, name, placeholder, value, onChange }: { label: string, name: string, placeholder: string, value: string, onChange: any }) {
-  return (
-    <div>
-      <label className="block text-sm font-semibold text-neutral-700 mb-2">{label}</label>
-      <textarea
-        name={name}
-        placeholder={placeholder}
-        value={value}
-        onChange={onChange}
-        rows={4}
-        className="w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl focus:ring-2 focus:ring-neutral-900 transition-all outline-none resize-none text-neutral-800"
-      />
-    </div>
+    </motion.div>
   );
 }
